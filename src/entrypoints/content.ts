@@ -1,9 +1,11 @@
 import getPageMetadata from "@/lib/getPageMetadata";
 import { ExtensionMessage, TweetData } from "@/types";
+import { analyzeTweet } from "@/lib/ai/misinformationDetector";
+import { MisinformationAnalysis } from "@/types/misinformation";
 
 export default defineContentScript({
   matches: ["*://twitter.com/*", "*://x.com/*"],
-  main() {
+  async main() {
     console.log("CheckX: Content script loaded");
 
     // Store for detected tweets to avoid duplicate processing
@@ -26,7 +28,14 @@ export default defineContentScript({
 
         if (tweetData) {
           console.log("CheckX: Tweet detected", tweetData);
-          injectBadge(tweetElement, tweetData);
+          // Start badge injection and AI analysis (no need to await)
+          injectBadge(tweetElement, tweetData).catch((error) => {
+            console.error(
+              "CheckX: Failed to inject badge for tweet",
+              tweetData.id,
+              error,
+            );
+          });
         }
       });
     }
@@ -44,6 +53,7 @@ export default defineContentScript({
 
       // Fallback: generate ID from element position and content
       const textContent = tweetElement.textContent?.slice(0, 50) || "";
+      console.log("TEXT CONTENT", textContent);
       return btoa(textContent).slice(0, 16);
     }
 
@@ -89,35 +99,122 @@ export default defineContentScript({
       }
     }
 
-    // Mock rating system for demonstration
-    function getMockRating(tweetData: TweetData): string {
-      const ratings = ["verified", "questionable", "false", "needs_review"];
-      // Use tweet ID to generate consistent rating
-      const hash = tweetData.id
-        .split("")
-        .reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0);
-      return ratings[hash % ratings.length];
+    // AI-powered misinformation analysis
+    async function analyzetweet(
+      tweetData: TweetData,
+    ): Promise<MisinformationAnalysis> {
+      try {
+        console.log("CheckX: Starting AI analysis for tweet", tweetData.id);
+        const analysis = await analyzeTweet(tweetData);
+        console.log("CheckX: AI analysis completed", {
+          tweetId: tweetData.id,
+          rating: analysis.rating,
+          confidence: analysis.confidence,
+          source: analysis.source,
+        });
+        return analysis;
+      } catch (error) {
+        console.error("CheckX: Analysis failed for tweet", tweetData.id, error);
+
+        // Fallback analysis
+        return {
+          confidence: 25,
+          rating: "needs_review",
+          topics: [],
+          reasoning: "Analysis failed - please review manually",
+          timestamp: new Date().toISOString(),
+          source: "rule_based",
+        };
+      }
     }
 
-    // Inject badge into tweet element
-    function injectBadge(tweetElement: Element, tweetData: TweetData) {
+    // Helper function to get badge text based on analysis
+    function getBadgeText(analysis: MisinformationAnalysis): string {
+      const ratingLabels = {
+        verified: "✓ Verified",
+        questionable: "⚠ Questionable",
+        false: "✗ False",
+        needs_review: "? Needs Review",
+      };
+
+      const baseText = ratingLabels[analysis.rating] || "? Unknown";
+
+      // Add confidence percentage for AI analysis
+      if (analysis.source === "ai" && analysis.confidence > 0) {
+        return `${baseText} (${analysis.confidence}%)`;
+      }
+
+      return baseText;
+    }
+
+    // Helper function to update badge appearance
+    function updateBadgeContent(
+      badge: HTMLElement,
+      options: {
+        rating: string;
+        text: string;
+        confidence: number;
+        isLoading: boolean;
+        analysis?: MisinformationAnalysis;
+      },
+    ) {
+      const badgeStyles = {
+        verified:
+          "background: rgba(34, 197, 94, 0.1); color: rgb(22, 163, 74); border: 1px solid rgba(34, 197, 94, 0.2);",
+        questionable:
+          "background: rgba(245, 158, 11, 0.1); color: rgb(217, 119, 6); border: 1px solid rgba(245, 158, 11, 0.2);",
+        false:
+          "background: rgba(239, 68, 68, 0.1); color: rgb(220, 38, 38); border: 1px solid rgba(239, 68, 68, 0.2);",
+        needs_review:
+          "background: rgba(107, 114, 128, 0.1); color: rgb(75, 85, 99); border: 1px solid rgba(107, 114, 128, 0.2);",
+      };
+
+      badge.textContent = options.text;
+      badge.style.cssText = `
+        ${badgeStyles[options.rating as keyof typeof badgeStyles]}
+        padding: 4px 8px;
+        border-radius: 9999px;
+        font-size: 11px;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        backdrop-filter: blur(8px);
+        cursor: pointer;
+        transition: all 0.2s ease;
+        ${options.isLoading ? "opacity: 0.7;" : ""}
+      `;
+
+      // Update title tooltip with analysis details
+      if (options.analysis) {
+        const tooltip = `Rating: ${options.analysis.rating}\nConfidence: ${options.analysis.confidence}%\nSource: ${options.analysis.source}\nReasoning: ${options.analysis.reasoning}`;
+        badge.title = tooltip;
+      }
+
+      // Add hover effects if not already added
+      if (badge.onmouseenter === null) {
+        badge.addEventListener("mouseenter", () => {
+          badge.style.transform = "scale(1.05)";
+        });
+
+        badge.addEventListener("mouseleave", () => {
+          badge.style.transform = "scale(1)";
+        });
+
+        // Add click handler with analysis data
+        badge.addEventListener("click", (e) => {
+          e.stopPropagation();
+          console.log("CheckX: Badge clicked", {
+            tweetId: badge.dataset.tweetId,
+            analysis: options.analysis,
+          });
+        });
+      }
+    }
+
+    // Inject badge into tweet element with AI analysis
+    async function injectBadge(tweetElement: Element, tweetData: TweetData) {
       try {
-        // Find the best insertion point (usually after the author info)
-        // const authorSection = tweetElement.querySelector(
-        //   '[data-testid="User-Name"]',
-        // )?.firstChild;
-        // console.log("authorSection: ", authorSection);
-        // ?.closest("a");
-        // const insertionPoint = authorSection?.parentElement;
-
-        // if (!insertionPoint) {
-        //   console.warn(
-        //     "CheckX: Could not find insertion point for tweet",
-        //     tweetData.id,
-        //   );
-        //   return;
-        // }
-
         // Create badge container
         const badgeContainer = document.createElement("div");
         badgeContainer.className = "checkx-badge-container";
@@ -131,61 +228,19 @@ export default defineContentScript({
 
         // Create badge element
         const badge = document.createElement("div");
-        const rating = getMockRating(tweetData);
+        badge.dataset.tweetId = tweetData.id; // Store tweet ID for click handler
 
-        // Apply badge styling based on rating
-        const badgeStyles = {
-          verified:
-            "background: rgba(34, 197, 94, 0.1); color: rgb(22, 163, 74); border: 1px solid rgba(34, 197, 94, 0.2);",
-          questionable:
-            "background: rgba(245, 158, 11, 0.1); color: rgb(217, 119, 6); border: 1px solid rgba(245, 158, 11, 0.2);",
-          false:
-            "background: rgba(239, 68, 68, 0.1); color: rgb(220, 38, 38); border: 1px solid rgba(239, 68, 68, 0.2);",
-          needs_review:
-            "background: rgba(107, 114, 128, 0.1); color: rgb(75, 85, 99); border: 1px solid rgba(107, 114, 128, 0.2);",
-        };
-
-        const ratingLabels = {
-          verified: "✓ Verified",
-          questionable: "⚠ Questionable",
-          false: "✗ False",
-          needs_review: "? Needs Review",
-        };
-
-        badge.textContent =
-          ratingLabels[rating as keyof typeof ratingLabels] || "? Unknown";
-        badge.style.cssText = `
-          ${badgeStyles[rating as keyof typeof badgeStyles]}
-          padding: 4px 8px;
-          border-radius: 9999px;
-          font-size: 11px;
-          font-weight: 500;
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          backdrop-filter: blur(8px);
-          cursor: pointer;
-          transition: all 0.2s ease;
-        `;
-
-        // Add hover effect
-        badge.addEventListener("mouseenter", () => {
-          badge.style.transform = "scale(1.05)";
-        });
-
-        badge.addEventListener("mouseleave", () => {
-          badge.style.transform = "scale(1)";
-        });
-
-        // Add click handler for future interaction
-        badge.addEventListener("click", (e) => {
-          e.stopPropagation();
-          console.log("CheckX: Badge clicked for tweet", tweetData.id);
+        // Show loading state initially
+        updateBadgeContent(badge, {
+          rating: "needs_review",
+          text: "🔄 Analyzing...",
+          confidence: 0,
+          isLoading: true,
         });
 
         badgeContainer.appendChild(badge);
 
-        // Make sure the parent has relative positioning
+        // Make sure the parent has relative positioning and insert badge
         const tweetContainer =
           tweetElement.querySelector('[data-testid="cellInnerDiv"]') ||
           tweetElement;
@@ -193,6 +248,30 @@ export default defineContentScript({
           tweetContainer.style.position = "relative";
           tweetContainer.appendChild(badgeContainer);
         }
+
+        // Start AI analysis in background
+        analyzetweet(tweetData)
+          .then((analysis) => {
+            updateBadgeContent(badge, {
+              rating: analysis.rating,
+              text: getBadgeText(analysis),
+              confidence: analysis.confidence,
+              isLoading: false,
+              analysis: analysis,
+            });
+          })
+          .catch((error) => {
+            console.error(
+              "CheckX: Failed to update badge after analysis",
+              error,
+            );
+            updateBadgeContent(badge, {
+              rating: "needs_review",
+              text: "⚠ Error",
+              confidence: 0,
+              isLoading: false,
+            });
+          });
       } catch (error) {
         console.error("CheckX: Error injecting badge", error);
       }

@@ -45,3 +45,13 @@ export type ExtensionMessage =
       type: "UPDATE_TWEET_RATING";
       payload: { tweetId: string; rating: TweetRating };
     };
+
+// Re-export AI-related types from misinformation module
+export type {
+  AISession,
+  AISessionOptions,
+  MisinformationAnalysis,
+  AIAnalysisRequest,
+  AIAnalysisResponse,
+  TweetRatingWithConfidence
+} from './misinformation';
