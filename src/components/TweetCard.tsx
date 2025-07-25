@@ -7,11 +7,12 @@ import {
 import {
   AlertCircle,
   CheckCircle,
-  ChevronDown,
+  ExternalLink,
   HelpCircle,
   XCircle,
 } from "lucide-react";
 import Markdown from "react-markdown";
+import { useState } from "react";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Badge } from "./ui/badge";
@@ -87,21 +88,35 @@ export default function TweetCard({ tweet }: { tweet: AnalyzedTweet }) {
       : tweet.content;
 
   return (
-    <Card className="cursor-pointer p-0 transition-shadow hover:shadow-md">
+    <Card className="p-0 transition-shadow hover:shadow-md">
       <CardContent className="p-4">
         <Accordion type="single" collapsible className="overflow-hidden">
-          <AccordionItem value="item-1">
-            <div className="flex w-full items-center justify-end">
-              <Badge
-                variant="secondary"
-                className={`${getRatingColor(tweet.rating)} flex items-center gap-1 text-xs`}
+          <AccordionItem value="item-1" className="flex flex-col gap-2">
+            <div className="flex w-full items-center justify-between">
+              <div className="flex items-center">
+                <Badge
+                  variant="secondary"
+                  className={`${getRatingColor(tweet.rating)} flex items-center gap-1 text-xs`}
+                >
+                  {getRatingIcon(tweet.rating)}
+                  {getRatingLabel(tweet.rating)}
+                </Badge>
+                <span className="ml-2 flex-shrink-0 text-xs text-gray-500">
+                  {formatTimestamp(new Date(tweet.analysisTimestamp))}
+                </span>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 cursor-pointer p-0 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.open(tweet.url, "_blank", "noopener,noreferrer");
+                }}
+                title="View original tweet"
               >
-                {getRatingIcon(tweet.rating)}
-                {getRatingLabel(tweet.rating)}
-              </Badge>
-              <span className="ml-2 flex-shrink-0 text-xs text-gray-500">
-                {formatTimestamp(new Date(tweet.analysisTimestamp))}
-              </span>
+                <ExternalLink className="h-3 w-3" />
+              </Button>
             </div>
 
             <span className="line-clamp-1 text-start text-sm font-medium">
@@ -148,12 +163,9 @@ export default function TweetCard({ tweet }: { tweet: AnalyzedTweet }) {
             </div>
             <AccordionTrigger className="mt-4 flex w-full items-center justify-between gap-2 overflow-hidden">
               <div className="mb-1 font-medium">Analysis Reasoning:</div>
-              <Button variant="outline" className="h-min w-min !p-0">
-                <ChevronDown className="h-4 w-4" />
-              </Button>
             </AccordionTrigger>
             <AccordionContent className="text-xs leading-relaxed text-gray-600 dark:text-gray-300">
-              <article className="prose lg:prose-xl">
+              <article className="prose lg:prose-xl dark:prose-invert">
                 <Markdown>{tweet.reasoning}</Markdown>
               </article>
             </AccordionContent>
