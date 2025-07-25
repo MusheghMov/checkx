@@ -5,6 +5,11 @@ import {
   AIAnalysisResponse,
 } from "@/types/misinformation";
 import { TweetData } from "@/types";
+import type {
+  NewsVerificationResult,
+  NewsDataResponse,
+  NewsResult,
+} from "@/types/news";
 
 // Zod schema for AI response validation
 const AIResponseSchema = z.object({
@@ -36,20 +41,336 @@ const HIGH_RISK_PATTERNS = [
 ];
 
 /**
- * Analyze tweet content for misinformation using Chrome AI
+ * Use AI to extract relevant keywords from tweet content for news search
+ */
+async function extractKeywordsWithAI(tweetContent: string): Promise<string[]> {
+  try {
+    const isReady = await chromeAI.initialize();
+    if (!isReady) {
+      throw new Error("Chrome AI not available");
+    }
+
+    const keywordPrompt = `Extract 3-5 relevant keywords from this tweet for news search:
+
+"${tweetContent}"
+
+Focus on:
+- Main topics, people, places, events
+- Factual claims that can be verified
+- Important entities or concepts
+- Avoid common words, hashtags, and URLs
+
+Return only the keywords as a JSON array: ["keyword1", "keyword2", "keyword3"]`;
+
+    const aiResponse = await chromeAI.executePrompt(keywordPrompt, 1);
+
+    if (!aiResponse) {
+      throw new Error("AI response was null");
+    }
+
+    // Extract keywords from AI response
+    const jsonMatch = aiResponse.match(/\[(.*?)\]/);
+    if (jsonMatch) {
+      try {
+        const keywords = JSON.parse(`[${jsonMatch[1]}]`);
+        return keywords
+          .filter((k: any) => typeof k === "string" && k.trim().length > 2)
+          .slice(0, 5);
+      } catch (parseError) {
+        console.warn("Failed to parse AI keywords response:", parseError);
+      }
+    }
+
+    // Fallback: simple extraction
+    return extractSimpleKeywords(tweetContent);
+  } catch (error) {
+    console.warn("AI keyword extraction failed, using fallback:", error);
+    return extractSimpleKeywords(tweetContent);
+  }
+}
+
+/**
+ * Simple fallback keyword extraction if AI fails
+ */
+function extractSimpleKeywords(tweetContent: string): string[] {
+  const cleanContent = tweetContent
+    .replace(/https?:\/\/[^\s]+/g, "") // Remove URLs
+    .replace(/@[\w]+/g, "") // Remove mentions
+    .replace(/#[\w]+/g, "") // Remove hashtags
+    .replace(/[^\w\s]/g, " ") // Remove punctuation
+    .toLowerCase();
+
+  const stopWords = new Set([
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "but",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "of",
+    "with",
+    "by",
+  ]);
+
+  return cleanContent
+    .split(/\s+/)
+    .filter((word) => word.length > 2 && !stopWords.has(word))
+    .slice(0, 5);
+}
+
+/**
+ * Simple fetch to NewsData.io API with keywords
+ */
+async function fetchNewsData(keywords: string[]): Promise<NewsResult[]> {
+  const apiKey = import.meta.env.VITE_NEWSDATA_API_KEY;
+
+  if (!apiKey) {
+    console.warn("NewsData.io API key not configured");
+    return [];
+  }
+
+  if (keywords.length === 0) {
+    return [];
+  }
+
+  try {
+    const query = keywords.join(" ");
+    const url = `https://newsdata.io/api/1/news?apikey=${apiKey}&q=${encodeURIComponent(query)}&language=en&size=5`;
+
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`NewsData.io API error: ${response.status}`);
+    }
+
+    const data: NewsDataResponse = await response.json();
+
+    // Convert to simplified format with relevance scoring
+    return data.results
+      .map((article) => ({
+        title: article.title,
+        source: article.source_id,
+        relevanceScore: calculateSimpleRelevance(
+          keywords.join(" "),
+          article.title + " " + article.description,
+        ),
+      }))
+      .sort((a, b) => b.relevanceScore - a.relevanceScore);
+  } catch (error) {
+    console.error("News fetch failed:", error);
+    return [];
+  }
+}
+
+/**
+ * Simple relevance calculation between keywords and article text
+ */
+function calculateSimpleRelevance(
+  keywords: string,
+  articleText: string,
+): number {
+  const keywordWords = keywords.toLowerCase().split(/\s+/);
+  const articleWords = articleText.toLowerCase().split(/\s+/);
+
+  let matches = 0;
+  keywordWords.forEach((keyword) => {
+    if (
+      articleWords.some(
+        (word) => word.includes(keyword) || keyword.includes(word),
+      )
+    ) {
+      matches++;
+    }
+  });
+
+  return matches / keywordWords.length;
+}
+
+/**
+ * Analyze tweet content for misinformation using NewsData.io verification + Chrome AI
  */
 export async function analyzeTweet(
   tweetData: TweetData,
 ): Promise<MisinformationAnalysis> {
   try {
-    return await performAIAnalysis(tweetData);
+    // First try news-enhanced analysis
+    return await performNewsEnhancedAnalysis(tweetData);
   } catch (error) {
     console.error(
-      "AI analysis failed, falling back to rule-based detection:",
+      "News-enhanced analysis failed, falling back to basic AI analysis:",
       error,
     );
-    return performRuleBasedAnalysis(tweetData);
+    try {
+      return await performAIAnalysis(tweetData);
+    } catch (aiError) {
+      console.error(
+        "AI analysis also failed, falling back to rule-based detection:",
+        aiError,
+      );
+      return performRuleBasedAnalysis(tweetData);
+    }
   }
+}
+
+/**
+ * Perform news-enhanced analysis: AI keyword extraction → News fetch → AI analysis with context
+ */
+async function performNewsEnhancedAnalysis(
+  tweetData: TweetData,
+): Promise<MisinformationAnalysis> {
+  console.log(
+    "CheckX: Starting simplified news-enhanced analysis for tweet",
+    tweetData.id,
+  );
+
+  // Step 1: Extract keywords using AI
+  console.log("CheckX: Extracting keywords with AI...");
+  const keywords = await extractKeywordsWithAI(tweetData.content);
+  console.log("CheckX: Extracted keywords:", keywords);
+
+  // Step 2: Fetch news data using those keywords
+  console.log("CheckX: Fetching news data...");
+  const newsArticles = await fetchNewsData(keywords);
+  console.log("CheckX: Found", newsArticles.length, "news articles");
+
+  // Step 3: Create news verification context
+  let newsVerification: NewsVerificationResult;
+  let newsVerificationText = "";
+
+  if (newsArticles.length > 0) {
+    const avgRelevance =
+      newsArticles.reduce((sum, article) => sum + article.relevanceScore, 0) /
+      newsArticles.length;
+
+    // Determine verification status based on article relevance
+    let verificationStatus: NewsVerificationResult["verificationStatus"];
+    if (avgRelevance > 0.4) {
+      verificationStatus = "verified";
+    } else if (avgRelevance > 0.2) {
+      verificationStatus = "mixed";
+    } else {
+      verificationStatus = "no_coverage";
+    }
+
+    newsVerification = {
+      articles: newsArticles.slice(0, 3),
+      verificationStatus,
+      summary: `Found ${newsArticles.length} news articles with average relevance of ${Math.round(avgRelevance * 100)}%. Sources: ${newsArticles
+        .slice(0, 3)
+        .map((a) => a.source)
+        .join(", ")}`,
+      confidenceScore: Math.round(avgRelevance * 100),
+    };
+
+    newsVerificationText =
+      `News verification context:\n` +
+      `Status: ${verificationStatus}\n` +
+      `Keywords used: ${keywords.join(", ")}\n` +
+      `Summary: ${newsVerification.summary}\n` +
+      `Top articles:\n` +
+      newsArticles
+        .slice(0, 3)
+        .map(
+          (article, index) =>
+            `${index + 1}. "${article.title}" from ${article.source} (${Math.round(article.relevanceScore * 100)}% relevant)`,
+        )
+        .join("\n");
+  } else {
+    newsVerification = {
+      articles: [],
+      verificationStatus: "no_coverage",
+      summary: `No news articles found for keywords: ${keywords.join(", ")}`,
+      confidenceScore: 0,
+    };
+    newsVerificationText = `News verification: No relevant news coverage found for this topic.`;
+  }
+
+  console.log("CheckX: News verification completed", {
+    status: newsVerification.verificationStatus,
+    articlesFound: newsVerification.articles.length,
+    confidenceScore: newsVerification.confidenceScore,
+  });
+
+  // Step 4: Perform AI analysis with news context
+  const isReady = await chromeAI.initialize();
+  if (!isReady) {
+    throw new Error("Chrome AI not available");
+  }
+
+  const analysisPrompt = createNewsEnhancedAnalysisPrompt(
+    tweetData,
+    newsVerificationText,
+  );
+  const aiResponse = await chromeAI.executePrompt(analysisPrompt, 1);
+
+  if (!aiResponse) {
+    throw new Error("AI response was null");
+  }
+
+  const parsedResponse = parseAIResponse(aiResponse);
+
+  // Step 5: Adjust confidence based on news verification
+  let finalConfidence = parsedResponse.confidence;
+  let finalReasoning = parsedResponse.reasoning;
+
+  switch (newsVerification.verificationStatus) {
+    case "verified":
+      finalConfidence = Math.max(0, finalConfidence - 15);
+      finalReasoning += ` News verification: Content is supported by recent news coverage.`;
+      break;
+    case "contradicted":
+      finalConfidence = Math.min(100, finalConfidence + 25);
+      finalReasoning += ` News verification: Content contradicts recent news reports.`;
+      break;
+    case "mixed":
+      finalReasoning += ` News verification: Mixed news coverage found - some support, some contradiction.`;
+      break;
+    case "no_coverage":
+      finalReasoning += ` News verification: No recent news coverage found on this topic.`;
+      break;
+  }
+
+  const analysis: MisinformationAnalysis = {
+    confidence: finalConfidence,
+    rating: determineRating(finalConfidence),
+    topics: parsedResponse.topics,
+    reasoning: finalReasoning,
+    timestamp: new Date().toISOString(),
+    source: "news_enhanced",
+    newsContext:
+      newsVerification.articles.length > 0
+        ? {
+            articles: newsVerification.articles.map((article) => ({
+              title: article.title,
+              description: "",
+              url: "",
+              source: article.source,
+              publishDate: "",
+              relevanceScore: article.relevanceScore,
+            })),
+            verificationStatus: newsVerification.verificationStatus,
+            summary: newsVerification.summary,
+            confidenceScore: newsVerification.confidenceScore,
+          }
+        : undefined,
+    newsVerification: newsVerificationText,
+  };
+
+  console.log("CheckX: Simplified news-enhanced analysis completed", {
+    keywords: keywords,
+    newsArticlesFound: newsArticles.length,
+    originalConfidence: parsedResponse.confidence,
+    finalConfidence: finalConfidence,
+    newsStatus: newsVerification.verificationStatus,
+    finalRating: analysis.rating,
+  });
+
+  return analysis;
 }
 
 /**
@@ -86,7 +407,41 @@ async function performAIAnalysis(
 }
 
 /**
- * Create analysis prompt for AI
+ * Create news-enhanced analysis prompt for AI
+ */
+function createNewsEnhancedAnalysisPrompt(
+  tweetData: TweetData,
+  newsContext: string,
+): string {
+  return `Analyze this tweet for misinformation with the provided news verification context:
+
+Content: "${tweetData.content}"
+Author: ${tweetData.author}
+Posted: ${new Date(tweetData.timestamp).toLocaleDateString()}
+
+${newsContext ? `\n${newsContext}\n` : ""}
+
+Provide your analysis in this exact JSON format:
+{
+  "confidence": [number from 0-100 representing probability this contains misinformation],
+  "topics": ["topic1", "topic2", "topic3"],
+  "reasoning": "Brief explanation of why you rated it this way, considering the news verification context"
+}
+
+Consider:
+- Factual accuracy and verifiability
+- Presence of misleading claims or context
+- Source credibility indicators
+- Obvious satire or opinion vs. presented facts
+- Potential harm from false information
+- How the tweet content aligns or conflicts with verified news sources
+- The credibility and recency of news coverage on this topic
+
+Be objective and precise in your assessment, giving appropriate weight to the news verification context.`;
+}
+
+/**
+ * Create analysis prompt for AI (legacy version without news context)
  */
 function createAnalysisPrompt(tweetData: TweetData): string {
   return `Analyze this tweet for misinformation:

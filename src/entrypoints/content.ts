@@ -143,6 +143,15 @@ export default defineContentScript({
 
       const baseText = ratingLabels[analysis.rating] || "? Unknown";
 
+      // Add confidence percentage and news indicator for enhanced analysis
+      if (analysis.source === "news_enhanced" && analysis.confidence > 0) {
+        const newsIndicator =
+          analysis.newsContext && analysis.newsContext.articles.length > 0
+            ? "📰"
+            : "";
+        return `${newsIndicator}${baseText} (${analysis.confidence}%)`;
+      }
+
       // Add confidence percentage for AI analysis
       if (analysis.source === "ai" && analysis.confidence > 0) {
         return `${baseText} (${analysis.confidence}%)`;
@@ -244,6 +253,50 @@ export default defineContentScript({
             <p style="font-size: 11px; color: #374151; line-height: 1.4; max-height: 96px; overflow-y: auto; margin: 0;">
               ${analysis.reasoning}
             </p>
+          </div>
+
+          <div style="height: 1px; background: #e5e7eb; margin: 8px 0;"></div>
+          `
+              : ""
+          }
+
+          ${
+            analysis.newsContext && analysis.newsContext.articles.length > 0
+              ? `
+          <!-- News Verification -->
+          <div style="margin-bottom: 12px;">
+            <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+              📰 News Verification
+              <span style="padding: 1px 4px; border-radius: 2px; font-size: 9px; background: ${
+                analysis.newsContext.verificationStatus === "verified"
+                  ? "rgba(34, 197, 94, 0.1); color: rgb(22, 163, 74)"
+                  : analysis.newsContext.verificationStatus === "contradicted"
+                    ? "rgba(239, 68, 68, 0.1); color: rgb(220, 38, 38)"
+                    : analysis.newsContext.verificationStatus === "mixed"
+                      ? "rgba(245, 158, 11, 0.1); color: rgb(217, 119, 6)"
+                      : "rgba(107, 114, 128, 0.1); color: rgb(75, 85, 99)"
+              };">
+                ${analysis.newsContext.verificationStatus.toUpperCase()}
+              </span>
+            </div>
+            <p style="font-size: 10px; color: #374151; line-height: 1.3; margin: 0 0 6px 0;">
+              ${analysis.newsContext.summary}
+            </p>
+            ${analysis.newsContext.articles
+              .slice(0, 2)
+              .map(
+                (article, index) => `
+              <div style="margin-bottom: 4px; padding: 4px; background: rgba(59, 130, 246, 0.05); border-radius: 3px;">
+                <div style="font-size: 9px; font-weight: 500; color: #1d4ed8; margin-bottom: 1px;">
+                  ${article.source} • ${Math.round(article.relevanceScore * 100)}% match
+                </div>
+                <div style="font-size: 8px; color: #374151; line-height: 1.2;">
+                  ${article.title.length > 60 ? article.title.slice(0, 60) + "..." : article.title}
+                </div>
+              </div>
+            `,
+              )
+              .join("")}
           </div>
 
           <div style="height: 1px; background: #e5e7eb; margin: 8px 0;"></div>

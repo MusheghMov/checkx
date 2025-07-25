@@ -21,7 +21,22 @@ export interface MisinformationAnalysis {
   topics: string[];
   reasoning: string;
   timestamp: string;
-  source: "ai" | "rule_based" | "cached";
+  source: "ai" | "rule_based" | "cached" | "news_enhanced";
+  // News verification context (optional)
+  newsContext?: {
+    articles: Array<{
+      title: string;
+      description: string;
+      url: string;
+      source: string;
+      publishDate: string;
+      relevanceScore: number;
+    }>;
+    verificationStatus: "verified" | "contradicted" | "no_coverage" | "mixed";
+    summary: string;
+    confidenceScore: number;
+  };
+  newsVerification?: string; // News-based reasoning text
 }
 
 export interface AIAnalysisRequest {
