@@ -1,5 +1,7 @@
 # CheckX - AI-Powered Twitter/X Fact Checker
 
+https://www.youtube.com/watch?v=oyyM3X-Jyl4
+
 CheckX is a Chrome browser extension that provides real-time misinformation detection for Twitter/X posts using Chrome's built-in AI and news verification through the NewsData.io API.
 
 ## 🚀 Features
