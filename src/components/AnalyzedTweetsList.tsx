@@ -160,7 +160,9 @@ const TweetCard: React.FC<TweetCardProps> = ({ tweet }) => {
               </Button>
             </AccordionTrigger>
             <AccordionContent className="text-xs leading-relaxed text-gray-600 dark:text-gray-300">
-              <Markdown>{tweet.reasoning}</Markdown>
+              <article className="prose lg:prose-xl">
+                <Markdown>{tweet.reasoning}</Markdown>
+              </article>
             </AccordionContent>
           </AccordionItem>
         </Accordion>

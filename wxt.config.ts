@@ -38,7 +38,7 @@ export default defineConfig({
     },
   },
   vite: () => ({
-    plugins: [tailwindcss()],
+    plugins: [tailwindcss(), require("@tailwindcss/typography")],
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),
