@@ -6,8 +6,6 @@ import { MisinformationAnalysis } from "@/types/misinformation";
 export default defineContentScript({
   matches: ["*://twitter.com/*", "*://x.com/*"],
   async main() {
-    console.log("CheckX: Content script loaded");
-
     // Store for detected tweets to avoid duplicate processing
     const processedTweets = new Set<string>();
 
