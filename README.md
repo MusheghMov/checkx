@@ -2,6 +2,8 @@
 
 https://www.youtube.com/watch?v=oyyM3X-Jyl4
 
+<iframe width="1254" height="705" src="https://www.youtube.com/embed/oyyM3X-Jyl4" title="CheckX demo" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
 CheckX is a Chrome browser extension that provides real-time misinformation detection for Twitter/X posts using Chrome's built-in AI and news verification through the NewsData.io API.
 
 ## 🚀 Features
