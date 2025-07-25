@@ -390,6 +390,27 @@ export default defineContentScript({
               isLoading: false,
               analysis: analysis,
             });
+
+            // Send analysis result to popup for database saving
+            try {
+              browser.runtime
+                .sendMessage({
+                  type: "SAVE_TWEET_ANALYSIS",
+                  payload: {
+                    tweetData: tweetData,
+                    analysis: analysis,
+                  },
+                } as ExtensionMessage)
+                .catch((error) => {
+                  // Silently handle message sending errors
+                  console.log(
+                    "CheckX: Could not send analysis to popup:",
+                    error,
+                  );
+                });
+            } catch (error) {
+              console.log("CheckX: Failed to send message to popup:", error);
+            }
           })
           .catch((error) => {
             console.error(
