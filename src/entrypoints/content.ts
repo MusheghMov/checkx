@@ -54,7 +54,13 @@ export default defineContentScript({
       // Fallback: generate ID from element position and content
       const textContent = tweetElement.textContent?.slice(0, 50) || "";
       console.log("TEXT CONTENT", textContent);
-      return btoa(textContent).slice(0, 16);
+      // Use a safer encoding method that handles non-Latin1 characters
+      return (
+        Array.from(textContent)
+          .map((char) => char.charCodeAt(0).toString(16))
+          .join("")
+          .slice(0, 16) || Math.random().toString(36).slice(2, 18)
+      );
     }
 
     // Extract tweet data from DOM element
@@ -147,6 +153,117 @@ export default defineContentScript({
       return baseText;
     }
 
+    // Helper function to create custom dropdown
+    function createDropdown(analysis: MisinformationAnalysis): HTMLElement {
+      const dropdown = document.createElement("div");
+      dropdown.className = "checkx-dropdown";
+      dropdown.style.cssText = `
+        position: absolute;
+        top: 100%;
+        right: 0;
+        width: 280px;
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        z-index: 1000;
+        display: none;
+        backdrop-filter: blur(8px);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      `;
+
+      // Format timestamp
+      const formatTimestamp = (timestamp: string) => {
+        const date = new Date(timestamp);
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffMins = Math.floor(diffMs / (1000 * 60));
+
+        if (diffMins < 1) return "Just now";
+        if (diffMins < 60)
+          return `${diffMins} min${diffMins === 1 ? "" : "s"} ago`;
+
+        const diffHours = Math.floor(diffMins / 60);
+        if (diffHours < 24)
+          return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
+
+        const diffDays = Math.floor(diffHours / 24);
+        return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+      };
+
+      // Create confidence bar
+      const percentage = Math.min(100, Math.max(0, analysis.confidence));
+      const barColor =
+        percentage >= 70 ? "#10b981" : percentage >= 40 ? "#f59e0b" : "#ef4444";
+
+      dropdown.innerHTML = `
+        <div style="padding: 12px; border-bottom: 1px solid #e5e7eb;">
+          <div style="font-weight: 600; font-size: 14px; color: #111827;">Analysis Details</div>
+        </div>
+        
+        <div style="padding: 12px;">
+          <!-- Confidence -->
+          <div style="margin-bottom: 12px;">
+            <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">Confidence</div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 12px; font-weight: 500;">${percentage}%</span>
+              <div style="flex: 1; height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden;">
+                <div style="height: 100%; background: ${barColor}; width: ${percentage}%; transition: width 0.3s ease;"></div>
+              </div>
+            </div>
+          </div>
+
+          ${
+            analysis.topics && analysis.topics.length > 0
+              ? `
+          <!-- Topics -->
+          <div style="margin-bottom: 12px;">
+            <div style="font-size: 11px; color: #6b7280; margin-bottom: 6px;">Topics</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+              ${analysis.topics
+                .map(
+                  (topic) => `
+                <span style="display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 4px; font-size: 10px; background: rgba(59, 130, 246, 0.1); color: #1d4ed8;">
+                  #${topic}
+                </span>
+              `,
+                )
+                .join("")}
+            </div>
+          </div>
+          `
+              : ""
+          }
+
+          <div style="height: 1px; background: #e5e7eb; margin: 8px 0;"></div>
+
+          ${
+            analysis.reasoning
+              ? `
+          <!-- Reasoning -->
+          <div style="margin-bottom: 12px;">
+            <div style="font-size: 11px; color: #6b7280; margin-bottom: 4px;">AI Reasoning</div>
+            <p style="font-size: 11px; color: #374151; line-height: 1.4; max-height: 96px; overflow-y: auto; margin: 0;">
+              ${analysis.reasoning}
+            </p>
+          </div>
+
+          <div style="height: 1px; background: #e5e7eb; margin: 8px 0;"></div>
+          `
+              : ""
+          }
+
+          <!-- Metadata -->
+          <div style="display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: #6b7280;">
+            <span style="text-transform: capitalize;">${analysis.source} Analysis</span>
+            <span>${formatTimestamp(analysis.timestamp)}</span>
+          </div>
+        </div>
+      `;
+
+      return dropdown;
+    }
+
     // Helper function to update badge appearance
     function updateBadgeContent(
       badge: HTMLElement,
@@ -182,32 +299,46 @@ export default defineContentScript({
         backdrop-filter: blur(8px);
         cursor: pointer;
         transition: all 0.2s ease;
+        position: relative;
         ${options.isLoading ? "opacity: 0.7;" : ""}
       `;
 
-      // Update title tooltip with analysis details
-      if (options.analysis) {
-        const tooltip = `Rating: ${options.analysis.rating}\nConfidence: ${options.analysis.confidence}%\nSource: ${options.analysis.source}\nReasoning: ${options.analysis.reasoning}`;
-        badge.title = tooltip;
+      // Create and attach dropdown if analysis is available
+      if (options.analysis && !badge.querySelector(".checkx-dropdown")) {
+        const dropdown = createDropdown(options.analysis);
+        badge.appendChild(dropdown);
+
+        // Add click handler to toggle dropdown
+        badge.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const isVisible = dropdown.style.display === "block";
+
+          // Hide all other dropdowns
+          document.querySelectorAll(".checkx-dropdown").forEach((d) => {
+            (d as HTMLElement).style.display = "none";
+          });
+
+          // Toggle current dropdown
+          dropdown.style.display = isVisible ? "none" : "block";
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener("click", (e) => {
+          if (!badge.contains(e.target as Node)) {
+            dropdown.style.display = "none";
+          }
+        });
       }
 
       // Add hover effects if not already added
-      if (badge.onmouseenter === null) {
+      if (!badge.dataset.hoverAdded) {
+        badge.dataset.hoverAdded = "true";
         badge.addEventListener("mouseenter", () => {
           badge.style.transform = "scale(1.05)";
         });
 
         badge.addEventListener("mouseleave", () => {
           badge.style.transform = "scale(1)";
-        });
-
-        // Add click handler with analysis data
-        badge.addEventListener("click", (e) => {
-          e.stopPropagation();
-          console.log("CheckX: Badge clicked", {
-            tweetId: badge.dataset.tweetId,
-            analysis: options.analysis,
-          });
         });
       }
     }

@@ -1,4 +1,3 @@
-import { ClerkProvider } from "@clerk/chrome-extension";
 import { ThemeProvider } from "@/components/theme-provider";
 import { QueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/sonner";
@@ -32,25 +31,15 @@ const queryClient = new QueryClient({
 const persister = createExtensionStoragePersister();
 
 export default function Providers({ children }: { children: React.ReactNode }) {
-  const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-  const SYNC_HOST = import.meta.env.VITE_CLERK_SYNC_HOST;
-
   return (
     <ThemeProvider>
-      <ClerkProvider
-        publishableKey={PUBLISHABLE_KEY}
-        syncHost={SYNC_HOST}
-        signInFallbackRedirectUrl={`${browser.runtime.getURL("/")}popup.html`}
-        afterSignOutUrl={`${browser.runtime.getURL("/")}popup.html`}
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{ persister }}
       >
-        <PersistQueryClientProvider
-          client={queryClient}
-          persistOptions={{ persister }}
-        >
-          <Toaster position="top-center" swipeDirections={["right"]} />
-          {children}
-        </PersistQueryClientProvider>
-      </ClerkProvider>
+        <Toaster position="top-center" swipeDirections={["right"]} />
+        {children}
+      </PersistQueryClientProvider>
     </ThemeProvider>
   );
 }

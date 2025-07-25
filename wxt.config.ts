@@ -20,10 +20,6 @@ export default defineConfig({
         "notifications",
         "scripting",
       ],
-      host_permissions: [
-        `${import.meta.env.VITE_CLERK_SYNC_HOST}/*`,
-        `${import.meta.env.VITE_CLERK_FRONTEND_API}/*`,
-      ],
       commands: {
         "save-link": {
           suggested_key: {

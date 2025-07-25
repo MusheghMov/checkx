@@ -237,7 +237,7 @@ function extractReasoning(response: string): string | null {
   // The real closing quote should be followed by JSON syntax: comma, closing brace, etc.
   const quoteChar = firstChar;
   let possibleEndings: number[] = [];
-  
+
   // Find all occurrences of the quote character
   for (let i = 1; i < remainingText.length; i++) {
     if (remainingText.charAt(i) === quoteChar) {
@@ -249,14 +249,15 @@ function extractReasoning(response: string): string | null {
   for (let i = possibleEndings.length - 1; i >= 0; i--) {
     const endPos = possibleEndings[i];
     const afterQuote = remainingText.slice(endPos + 1).trim();
-    
+
     // Check if this quote is followed by valid JSON endings
-    if (afterQuote.startsWith(',') || 
-        afterQuote.startsWith('}') || 
-        afterQuote === '' ||
-        afterQuote.startsWith('\n}') ||
-        afterQuote.startsWith('\r\n}')) {
-      
+    if (
+      afterQuote.startsWith(",") ||
+      afterQuote.startsWith("}") ||
+      afterQuote === "" ||
+      afterQuote.startsWith("\n}") ||
+      afterQuote.startsWith("\r\n}")
+    ) {
       // This looks like the real closing quote
       const content = remainingText.slice(1, endPos);
       return content.trim();
